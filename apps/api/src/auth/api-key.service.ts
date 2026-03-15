@@ -267,7 +267,7 @@ export class ApiKeyService {
         scopes: matchingRecord.scopes,
       };
     } catch (error) {
-      this.logger.error('Error validating API key:', error instanceof Error ? error.message : 'Unknown error');
+      this.logger.error('Error validating API key:', error);
       return null;
     }
   }

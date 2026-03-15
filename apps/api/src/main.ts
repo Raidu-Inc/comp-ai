@@ -103,15 +103,17 @@ async function bootstrap(): Promise<void> {
     )
     .addServer('https://api.trycomp.ai', 'API Server')
     .build();
-  const document: OpenAPIObject = SwaggerModule.createDocument(app, config);
-
-  // Setup Swagger UI at /api/docs
-  SwaggerModule.setup('api/docs', app, document, {
-    raw: ['json'],
-    swaggerOptions: {
-      persistAuthorization: true, // Keep auth between page refreshes
-    },
-  });
+  try {
+    const document: OpenAPIObject = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document, {
+      raw: ['json'],
+      swaggerOptions: {
+        persistAuthorization: true,
+      },
+    });
+  } catch (e) {
+    console.warn('Swagger setup skipped:', (e as Error).message);
+  }
 
   const server = await app.listen(port);
   const address = server.address();
@@ -123,18 +125,20 @@ async function bootstrap(): Promise<void> {
 
   // Write OpenAPI documentation to packages/docs/openapi.json only in development
   if (process.env.NODE_ENV !== 'production') {
-    const openapiPath = path.join(
-      __dirname,
-      '../../../../packages/docs/openapi.json',
-    );
-
-    const docsDir = path.dirname(openapiPath);
-    if (!existsSync(docsDir)) {
-      mkdirSync(docsDir, { recursive: true });
+    try {
+      const openapiPath = path.join(
+        __dirname,
+        '../../../../packages/docs/openapi.json',
+      );
+      const docsDir = path.dirname(openapiPath);
+      if (!existsSync(docsDir)) {
+        mkdirSync(docsDir, { recursive: true });
+      }
+      writeFileSync(openapiPath, JSON.stringify(document, null, 2));
+      console.log('OpenAPI documentation written to packages/docs/openapi.json');
+    } catch {
+      // skip if document wasn't created
     }
-
-    writeFileSync(openapiPath, JSON.stringify(document, null, 2));
-    console.log('OpenAPI documentation written to packages/docs/openapi.json');
   }
 }
 
