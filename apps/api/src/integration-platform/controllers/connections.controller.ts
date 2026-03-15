@@ -69,15 +69,8 @@ export class ConnectionsController {
    * List all available integration providers
    */
   @Get('providers')
-<<<<<<< HEAD
-  async listProviders(
-    @Query('activeOnly') activeOnly?: string,
-    @Query('organizationId') organizationId?: string,
-  ) {
-=======
   @RequirePermission('integration', 'read')
   async listProviders(@Query('activeOnly') activeOnly?: string) {
->>>>>>> upstream/main
     const manifests =
       activeOnly === 'true' ? getActiveManifests() : getAllManifests();
 

@@ -1,31 +1,15 @@
 import { SupportedOS } from '@/app/api/download-agent/types';
-import {
-  extractKeyFromUrl,
-  getBucketName,
-  getStorageProvider,
-  getStorageProviderType,
-  type StorageProvider,
-} from '@trycompai/storage';
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-// Re-export bucket name for backward compatibility
-export const BUCKET_NAME = getBucketName('attachments');
+const APP_AWS_REGION = process.env.APP_AWS_REGION;
+const APP_AWS_ACCESS_KEY_ID = process.env.APP_AWS_ACCESS_KEY_ID;
+const APP_AWS_SECRET_ACCESS_KEY = process.env.APP_AWS_SECRET_ACCESS_KEY;
+const APP_AWS_ENDPOINT = process.env.APP_AWS_ENDPOINT;
 
-// Storage provider instance
-let storageProviderInstance: StorageProvider | null = null;
+export const BUCKET_NAME = process.env.APP_AWS_BUCKET_NAME;
+export const APP_AWS_ORG_ASSETS_BUCKET = process.env.APP_AWS_ORG_ASSETS_BUCKET;
 
-<<<<<<< HEAD
-try {
-  const providerType = getStorageProviderType();
-
-  // Only throw in development, log in production
-  if (process.env.NODE_ENV !== 'production') {
-    storageProviderInstance = getStorageProvider();
-  } else {
-    try {
-      storageProviderInstance = getStorageProvider();
-    } catch (error) {
-      console.error('Storage provider initialization failed:', error);
-=======
 if (!APP_AWS_ACCESS_KEY_ID || !APP_AWS_SECRET_ACCESS_KEY || !BUCKET_NAME || !APP_AWS_REGION) {
   console.warn(
     'AWS S3 credentials or configuration missing in environment variables. File upload features will be unavailable.',
@@ -87,53 +71,80 @@ export function extractS3KeyFromUrl(url: string): string {
     // Validate it's an S3 URL
     if (!isValidS3Host(parsedUrl.host)) {
       throw new Error('Invalid URL: Not a valid S3 endpoint');
->>>>>>> upstream/main
     }
+
+    // Extract and validate the key
+    const key = decodeURIComponent(parsedUrl.pathname.substring(1));
+
+    // Security: Check for path traversal
+    if (key.includes('../') || key.includes('..\\')) {
+      throw new Error('Invalid S3 key: Path traversal detected');
+    }
+
+    // Validate key is not empty
+    if (!key) {
+      throw new Error('Invalid S3 key: Key cannot be empty');
+    }
+
+    return key;
   }
-} catch (error) {
-  if (process.env.NODE_ENV !== 'production') {
-    throw error;
+
+  // Not a URL - treat as S3 key
+  // Security: Ensure it's not a malformed URL attempting to bypass validation
+  const lowerInput = url.toLowerCase();
+  if (lowerInput.includes('://') || lowerInput.includes('amazonaws.com')) {
+    throw new Error('Invalid input: Malformed URL detected');
   }
-  console.error('Storage credentials or configuration missing in environment variables.');
+
+  // Security: Check for path traversal
+  if (url.includes('../') || url.includes('..\\')) {
+    throw new Error('Invalid S3 key: Path traversal detected');
+  }
+
+  // Remove leading slash if present
+  const key = url.startsWith('/') ? url.substring(1) : url;
+
+  // Validate key is not empty
+  if (!key) {
+    throw new Error('Invalid S3 key: Key cannot be empty');
+  }
+
+  return key;
 }
 
-export const storageProvider = storageProviderInstance;
-
-// Re-export for backward compatibility with code that uses s3Client directly
-// NOTE: This only works when using AWS S3 - GCP users should use storageProvider instead
-export const s3Client = storageProviderInstance && getStorageProviderType() === 'aws'
-  ? (storageProviderInstance as any).getClient?.()
-  : null;
-
-// Re-export utilities
-export { extractKeyFromUrl as extractS3KeyFromUrl };
-
 export async function getFleetAgent({ os }: { os: SupportedOS }) {
-  if (!storageProvider) {
-    throw new Error('Storage provider not configured');
-  }
-
-  const fleetBucketName = getBucketName('fleetAgent');
+  const fleetBucketName = process.env.FLEET_AGENT_BUCKET_NAME;
 
   if (!fleetBucketName) {
-    throw new Error('Fleet agent bucket is not configured');
+    throw new Error('FLEET_AGENT_BUCKET_NAME is not defined.');
+  }
+
+  let extension: string;
+  switch (os) {
+    case 'macos':
+      extension = 'pkg';
+      break;
+    case 'windows':
+      extension = 'msi';
+      break;
+    default:
+      throw new Error(`Unsupported OS: ${os}`);
   }
 
   const macosPackageFilename = 'Comp AI Agent-1.0.0-arm64.dmg';
   const windowsPackageFilename = 'fleet-osquery.msi';
 
-  const key = `${os}/${os === 'macos' ? macosPackageFilename : windowsPackageFilename}`;
-
-  const stream = await storageProvider.getStream({
-    bucket: fleetBucketName,
-    key,
+  const getFleetAgentCommand = new GetObjectCommand({
+    Bucket: fleetBucketName,
+    Key: `${os}/${os === 'macos' ? macosPackageFilename : windowsPackageFilename}`,
   });
 
-  return stream;
+  const response = await s3Client.send(getFleetAgentCommand);
+  return response.Body;
 }
 
 /**
- * Generates a presigned URL for downloading a file from storage
+ * Generates a presigned URL for downloading a file from S3
  */
 export async function getPresignedDownloadUrl({
   bucketName,
@@ -144,20 +155,16 @@ export async function getPresignedDownloadUrl({
   key: string;
   expiresIn?: number;
 }): Promise<string> {
-  if (!storageProvider) {
-    throw new Error('Storage provider not configured');
-  }
-
-  return storageProvider.getSignedUrl({
-    bucket: bucketName,
-    key,
-    operation: 'read',
-    expiresIn,
+  const command = new GetObjectCommand({
+    Bucket: bucketName,
+    Key: key,
   });
+
+  return await getSignedUrl(s3Client, command, { expiresIn });
 }
 
 /**
- * Generates a presigned URL for uploading a file to storage
+ * Generates a presigned URL for uploading a file to S3
  */
 export async function getPresignedUploadUrl({
   bucketName,
@@ -170,15 +177,11 @@ export async function getPresignedUploadUrl({
   contentType?: string;
   expiresIn?: number;
 }): Promise<string> {
-  if (!storageProvider) {
-    throw new Error('Storage provider not configured');
-  }
-
-  return storageProvider.getSignedUrl({
-    bucket: bucketName,
-    key,
-    operation: 'write',
-    expiresIn,
-    contentType,
+  const command = new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    ContentType: contentType,
   });
+
+  return await getSignedUrl(s3Client, command, { expiresIn });
 }

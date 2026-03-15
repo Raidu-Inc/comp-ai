@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-export default function IntegrationsLayout({ children }: { children: React.ReactNode }) {
-  return children;
-=======
 import { requireRoutePermission } from '@/lib/permissions.server';
 
 export default async function Layout({
@@ -14,5 +10,4 @@ export default async function Layout({
   const { orgId } = await params;
   await requireRoutePermission('integrations', orgId);
   return <>{children}</>;
->>>>>>> upstream/main
 }

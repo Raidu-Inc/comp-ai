@@ -1,7 +1,8 @@
 'use server';
 
 import { authActionClient } from '@/actions/safe-action';
-import { BUCKET_NAME, storageProvider } from '@/app/s3';
+import { BUCKET_NAME, s3Client } from '@/app/s3';
+import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { db, PolicyDisplayFormat } from '@db';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -19,7 +20,7 @@ export const uploadPolicyPdfAction = authActionClient
   .metadata({
     name: 'upload-policy-pdf',
     track: {
-      event: 'upload-policy-pdf-storage',
+      event: 'upload-policy-pdf-s3',
       channel: 'server',
     },
   })
@@ -32,16 +33,10 @@ export const uploadPolicyPdfAction = authActionClient
       return { success: false, error: 'Not authorized' };
     }
 
-    if (!storageProvider || !BUCKET_NAME) {
+    if (!s3Client || !BUCKET_NAME) {
       return { success: false, error: 'File storage is not configured.' };
     }
 
-<<<<<<< HEAD
-    const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const storageKey = `${organizationId}/policies/${policyId}/${Date.now()}-${sanitizedFileName}`;
-
-    try {
-=======
     try {
       // Verify policy belongs to organization
       const policy = await db.policy.findUnique({
@@ -120,38 +115,23 @@ export const uploadPolicyPdfAction = authActionClient
       const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
       const s3Key = `${organizationId}/policies/${policyId}/${Date.now()}-${sanitizedFileName}`;
 
->>>>>>> upstream/main
       const fileBuffer = Buffer.from(fileData, 'base64');
-
-      await storageProvider.upload({
-        bucket: BUCKET_NAME,
-        key: storageKey,
-        data: fileBuffer,
-        contentType: fileType,
+      const putCommand = new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: s3Key,
+        Body: fileBuffer,
+        ContentType: fileType,
       });
-<<<<<<< HEAD
-
-      // After a successful upload, update the policy to store the storage key
-=======
       await s3Client.send(putCommand);
 
->>>>>>> upstream/main
       await db.policy.update({
         where: { id: policyId, organizationId },
         data: {
-          pdfUrl: storageKey,
+          pdfUrl: s3Key,
           displayFormat: PolicyDisplayFormat.PDF,
         },
       });
 
-<<<<<<< HEAD
-      const headersList = await headers();
-      let path = headersList.get('x-pathname') || headersList.get('referer') || '';
-      path = path.replace(/\/[a-z]{2}\//, '/');
-      revalidatePath(path);
-
-      return { success: true, data: { s3Key: storageKey } };
-=======
       if (oldPdfUrl && oldPdfUrl !== s3Key) {
         try {
           await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: oldPdfUrl }));
@@ -162,9 +142,8 @@ export const uploadPolicyPdfAction = authActionClient
 
       revalidatePath(`/${organizationId}/policies/${policyId}`);
       return { success: true, data: { s3Key } };
->>>>>>> upstream/main
     } catch (error) {
-      console.error('Error uploading policy PDF to storage:', error);
+      console.error('Error uploading policy PDF to S3:', error);
       return { success: false, error: 'Failed to upload PDF.' };
     }
   });

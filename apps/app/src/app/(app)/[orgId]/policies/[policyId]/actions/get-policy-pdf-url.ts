@@ -1,19 +1,21 @@
 'use server';
 
 import { authActionClient } from '@/actions/safe-action';
-import { BUCKET_NAME, storageProvider } from '@/app/s3';
+import { BUCKET_NAME, s3Client } from '@/app/s3';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { db } from '@db';
 import { z } from 'zod';
 
 export const getPolicyPdfUrlAction = authActionClient
-  .inputSchema(z.object({ 
+  .inputSchema(z.object({
     policyId: z.string(),
     versionId: z.string().optional(), // If provided, get URL for this version's PDF
   }))
   .metadata({
     name: 'get-policy-pdf-url',
     track: {
-      event: 'get-policy-pdf-url-storage',
+      event: 'get-policy-pdf-url-s3',
       channel: 'server',
     },
   })
@@ -26,7 +28,7 @@ export const getPolicyPdfUrlAction = authActionClient
       return { success: false, error: 'Not authorized' };
     }
 
-    if (!storageProvider || !BUCKET_NAME) {
+    if (!s3Client || !BUCKET_NAME) {
       return { success: false, error: 'File storage is not configured.' };
     }
 
@@ -76,21 +78,13 @@ export const getPolicyPdfUrlAction = authActionClient
       }
 
       // Generate a temporary, secure URL for the client to render the PDF from the private bucket.
-<<<<<<< HEAD
-      const signedUrl = await storageProvider.getSignedUrl({
-        bucket: BUCKET_NAME,
-        key: policy.pdfUrl,
-        operation: 'read',
-        expiresIn: 900, // URL is valid for 15 minutes
-        contentDisposition: 'inline',
-=======
       const command = new GetObjectCommand({
         Bucket: BUCKET_NAME,
         Key: pdfUrl,
         ResponseContentDisposition: 'inline',
         ResponseContentType: 'application/pdf',
->>>>>>> upstream/main
       });
+      const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 }); // URL is valid for 15 minutes
 
       return { success: true, data: signedUrl };
     } catch (error) {

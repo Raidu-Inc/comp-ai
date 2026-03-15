@@ -2,11 +2,7 @@
 
 import { ConnectIntegrationDialog } from '@/components/integrations/ConnectIntegrationDialog';
 import { ManageIntegrationDialog } from '@/components/integrations/ManageIntegrationDialog';
-<<<<<<< HEAD
-import { OAuthSetupDialog } from '@/components/integrations/OAuthSetupDialog';
-=======
 import { usePermissions } from '@/hooks/use-permissions';
->>>>>>> upstream/main
 import {
   ConnectionListItem,
   IntegrationProvider,
